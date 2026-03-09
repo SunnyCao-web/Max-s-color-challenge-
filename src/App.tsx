@@ -23,10 +23,9 @@ interface GameState {
 }
 
 // --- Constants ---
-const GRID_SIZE = 5; // Fixed 5x5 as requested
 const INITIAL_TIME = 60;
 const INITIAL_DIFF = 15; // Initial lightness difference in %
-const MIN_DIFF = 1.5; // Minimum lightness difference for extreme levels
+const MIN_DIFF = 1.2; // Minimum lightness difference for extreme levels
 
 export default function App() {
   const [gameState, setGameState] = useState<GameState>({
@@ -39,34 +38,48 @@ export default function App() {
   const [colors, setColors] = useState<Color[]>([]);
   const [targetIndex, setTargetIndex] = useState<number>(-1);
   const [diffValue, setDiffValue] = useState<number>(INITIAL_DIFF);
+  const [currentGridSize, setCurrentGridSize] = useState<number>(4);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // --- Helpers ---
-  const generateLevel = useCallback(() => {
-    const baseH = Math.floor(Math.random() * 360);
-    const baseS = 50 + Math.floor(Math.random() * 40); // 50-90%
-    const baseL = 40 + Math.floor(Math.random() * 40); // 40-80%
+  const getGridSize = (score: number) => {
+    if (score < 5) return 4;
+    if (score < 15) return 5;
+    if (score < 30) return 6;
+    if (score < 50) return 7;
+    if (score < 80) return 8;
+    return 9;
+  };
 
-    const currentDiff = Math.max(MIN_DIFF, INITIAL_DIFF - Math.floor(gameState.score / 3) * 1.5);
+  const generateLevel = useCallback((score: number) => {
+    const gridSize = getGridSize(score);
+    setCurrentGridSize(gridSize);
+
+    const baseH = Math.floor(Math.random() * 360);
+    const baseS = 40 + Math.floor(Math.random() * 50); // 40-90%
+    const baseL = 35 + Math.floor(Math.random() * 50); // 35-85%
+
+    // Difficulty curve: difference decreases as score increases
+    const currentDiff = Math.max(MIN_DIFF, INITIAL_DIFF - (score * 0.4));
     setDiffValue(currentDiff);
 
     const isLighter = Math.random() > 0.5;
     const targetL = isLighter 
-      ? Math.min(95, baseL + currentDiff) 
-      : Math.max(5, baseL - currentDiff);
+      ? Math.min(96, baseL + currentDiff) 
+      : Math.max(4, baseL - currentDiff);
 
-    const newColors = Array(GRID_SIZE * GRID_SIZE).fill({ h: baseH, s: baseS, l: baseL });
-    const randomIndex = Math.floor(Math.random() * (GRID_SIZE * GRID_SIZE));
+    const newColors = Array(gridSize * gridSize).fill({ h: baseH, s: baseS, l: baseL });
+    const randomIndex = Math.floor(Math.random() * (gridSize * gridSize));
     
     newColors[randomIndex] = { h: baseH, s: baseS, l: targetL };
     
     setColors(newColors);
     setTargetIndex(randomIndex);
-  }, [gameState.score]);
+  }, []);
 
   const startGame = () => {
     setGameState(prev => ({ ...prev, status: 'playing', score: 0, timeLeft: INITIAL_TIME }));
-    generateLevel();
+    generateLevel(0);
   };
 
   const handleBlockClick = (index: number) => {
@@ -74,17 +87,18 @@ export default function App() {
 
     if (index === targetIndex) {
       // Correct
+      const nextScore = gameState.score + 1;
       setGameState(prev => ({ 
         ...prev, 
-        score: prev.score + 1,
+        score: nextScore,
         timeLeft: Math.min(INITIAL_TIME, prev.timeLeft + 2) // Bonus time
       }));
-      generateLevel();
+      generateLevel(nextScore);
     } else {
       // Wrong - penalty
       setGameState(prev => ({ 
         ...prev, 
-        timeLeft: Math.max(0, prev.timeLeft - 5) 
+        timeLeft: Math.max(0, prev.timeLeft - 4) 
       }));
     }
   };
@@ -156,7 +170,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2 text-black/40 text-[10px] uppercase tracking-widest font-bold">
             <Eye className="w-3 h-3" />
-            <span>Level {Math.floor(gameState.score / 5) + 1}</span>
+            <span>Grid {currentGridSize}x{currentGridSize}</span>
           </div>
         </div>
 
@@ -176,7 +190,7 @@ export default function App() {
                 </div>
                 <h2 className="text-2xl font-serif italic mb-4">准备好测试你的眼力了吗？</h2>
                 <p className="text-sm text-black/60 leading-relaxed mb-8 max-w-xs">
-                  在 5x5 的网格中找出那个颜色略有不同的色块。随着得分增加，差异会越来越小。
+                  在不断扩大的网格中找出那个颜色略有不同的色块。随着得分增加，网格会变大，差异会越来越小。
                 </p>
                 <button 
                   onClick={startGame}
@@ -216,14 +230,18 @@ export default function App() {
                 key="playing"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="grid grid-cols-5 grid-rows-5 gap-2 w-full h-full"
+                className="grid gap-2 w-full h-full"
+                style={{ 
+                  gridTemplateColumns: `repeat(${currentGridSize}, 1fr)`,
+                  gridTemplateRows: `repeat(${currentGridSize}, 1fr)` 
+                }}
               >
                 {colors.map((color, idx) => (
                   <motion.button
                     key={`${gameState.score}-${idx}`}
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    transition={{ delay: idx * 0.01 }}
+                    transition={{ delay: idx * (0.1 / (currentGridSize * currentGridSize)) }}
                     whileHover={{ scale: 0.98 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => handleBlockClick(idx)}
